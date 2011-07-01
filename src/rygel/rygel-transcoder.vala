@@ -32,7 +32,6 @@ using Gee;
 internal abstract class Rygel.Transcoder : GLib.Object {
     public string mime_type { get; protected set; }
     public string dlna_profile { get; protected set; }
-    public Gst.Caps decoder_caps;
 
     private const string TRANSCODE_BIN = "transcodebin";
 
@@ -61,7 +60,7 @@ internal abstract class Rygel.Transcoder : GLib.Object {
         dynamic Element transcoder = GstUtils.create_element (TRANSCODE_BIN,
                                                               TRANSCODE_BIN);
 
-        encoder.profile = this.get_encoding_profile ();
+        transcoder.profile = this.get_encoding_profile ();
 
         var bin = new Bin ("transcoder-source");
         bin.add_many (src, transcoder);
