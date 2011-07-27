@@ -25,27 +25,43 @@ using GUPnP;
 using Gst;
 using Gee;
 
-internal abstract class Rygel.DLNATranscoder : Rygel.Transcoder {
+internal class Rygel.DLNATranscoder : Rygel.Transcoder {
     private DLNAProfile prof;
-
-    //internal information about the transcoder's profile
-    //some of the video items also count for pictures
-    //Basically, all of these are arrays; each one represents a
-    //different GstStructure on a particular stream of caps.
-    private ArrayList<int> video_bitrate;
-    private ArrayList<int> video_width;
-    private ArrayList<int> video_height;
-
-    private ArrayList<int> audio_rate;
-    private ArrayList<int> audio_bitrate;
-    private ArrayList<int> audio_channels;
-    private ArrayList<int> audio_width;
+    private EncodingVideoProfile? videoprof;
+    private EncodingAudioProfile? audioprof;
     
-    public DLNATranscoder (DLNAProfile prof) {
-        var mime_type = prof.get_mime();
-        super(mime_type, prof.get_name(), upnp_class_from_mime(mime_type));
+    public DLNATranscoder (DLNAProfile profile) {
+        var mime_type = profile.get_mime();
+        super(mime_type, profile.get_name(), this.upnp_class_from_mime(mime_type));
 
-        this.prof = prof;
+        this.prof = profile;
+        EncodingContainerProfile ecp;
+        
+        if (profile is EncodingContainerProfile) {
+            ecp = profile as EncodingContainerProfile;
+            int max_vpass = -1;
+            EncodingVideoProfile evp_maxvpass;
+        
+            foreach (EncodingProfile child in ecp.get_profiles()) {
+                if (child is EncodingVideoProfile) {
+                    var evp = child as EncodingVideoProfile;
+                    if (evp.get_pass() >= max_vpass) {
+                        max_vpass = evp.get_pass();
+                        evp_maxvpass = evp;
+                    }
+                } else if (child is EncodingAudioProfile) {
+                    this.audioprof = child as EncodingAudioProfile;
+                }
+            }
+        
+            this.videoprof = evp_maxvpass;
+        } else if (profile is EncodingAudioProfile) {
+            this.audioprof = profile as EncodingAudioProfile;
+            this.videoprof = null;
+        } else if (profile is EncodingVideoProfile) {
+            //containerless video stream, probably not even possible, have this case in here anyway
+            this.videoprof = profile as EncodingVideoProfile;
+        }
     }
     
     /**
@@ -77,68 +93,19 @@ internal abstract class Rygel.DLNATranscoder : Rygel.Transcoder {
         }
     };
 
-    private void setup_profile_information() {
-        var profile = this.get_encoding_profile();
-        EncodingContainerProfile ecp;
-        ArrayList<EncodingProfile> streamprofs = new ArrayList<EncodingProfile>();
-        
-        if (profile is EncodingContainerProfile) {
-            ecp = profile as EncodingContainerProfile;
-            foreach (EncodingProfile child in ecp.get_profiles()) {
-                streamprofs.add(child);
+    private uint field_difference(int me, unowned Value? theirs) {
+        if (theirs == null) {
+            return 0;
+        } else if (theirs.holds(IntRange)) {
+            if (me < theirs.get_int_range_min()) {
+                return (me - theirs.get_int_range_min()).abs();
+            } else if (me > theirs.get_int_range_max()) {
+                return (me - theirs.get_int_range_max()).abs();
+            } else {
+                return 0;
             }
-        } else {
-            streamprofs.add(profile);
-        }
-        
-        int max_vpass = -1;
-        EncodingVideoProfile evp_maxvpass;
-        
-        foreach (EncodingProfile child in streamprofs) {
-            if (child is EncodingVideoProfile) {
-                var evp = child as EncodingVideoProfile;
-                if (evp.get_pass() >= max_vpass) {
-                    max_vpass = evp.get_pass();
-                    evp_maxvpass = evp;
-                }
-            } else if (child is EncodingAudioProfile) {
-                var profcaps = evp.get_format();
-                int structmax = profcaps.get_size();
-                for (int i = 0; i < structmax; i++) {
-                    var capstruct = profcaps.get_structure(i);
-                    int audio_rate = 0;
-                    int audio_channels = 0;
-                    int audio_bitrate = 0;
-                    int audio_width = 0;
-                    capstruct.get_int("rate", audio_rate);
-                    capstruct.get_int("channels", audio_channels);
-                    capstruct.get_int("bitrate", audio_bitrate);
-                    capstruct.get_int("width", audio_width);
-
-                    this.audio_rate.add(audio_rate);
-                    this.audio_channels.add(audio_channels);
-                    this.audio_bitrate.add(audio_bitrate);
-                    this.audio_width.add(audio_width);
-                }
-            }
-        }
-
-        //we take video settings from the highest pass in the profile
-        //as opposed to the audio, which has no pass# to order on
-        var profcaps = evp_maxvpass.get_format();
-        int structmax = profcaps.get_size();
-        for (int i = 0; i < structmax; i++) {
-            var capstruct = profcaps.get_structure(i);
-            int video_bitrate = 0;
-            int video_width = 0;
-            int video_height = 0;
-            capstruct.get_int("bitrate", video_bitrate);
-            capstruct.get_int("width", video_width);
-            capstruct.get_int("height", video_height);
-
-            this.video_bitrate.add(video_bitrate);
-            this.video_width.add(video_width);
-            this.video_height.add(video_height);
+        } else if (theirs.holds(int)) {
+            return (me - theirs.get_int()).abs();
         }
     };
 
@@ -146,18 +113,28 @@ internal abstract class Rygel.DLNATranscoder : Rygel.Transcoder {
      * Calculate the distance between a particular subprofile we have
      * and an input video stream bitrate and picture size.
      *
-     * @param subprofile    Which 'subprofile' to use.
      * @param item          Input VisualItem to transcode, either a video or picture
      * @return      An integer distance assessment as to the difficulty
      *              of transcoding input video stream to the selected subprofile
      */
-    private int get_video_distance(int subprofile, VisualItem item) {
-        int our_bitrate = this.video_bitrate.get(subprofile);
-        int our_width = this.video_width.get(subprofile);
-        int our_height = this.video_height.get(subprofile);
-
-        return (item.bitrate - our_bitrate).abs() +
-               (width - our_width).abs() + (height - our_height).abs();
+    private uint get_video_distance(VisualItem item) {
+        var format = this.videoprof.get_format();
+        int num_structs = format.get_size();
+        int min_distance = uint.MAX;
+        for (int i = 0; i < num_structs; i++) {
+            var s = format.get_structure(i);
+            //we need fields: width, height, bitrate
+            int diff = 0;
+            diff += this.field_difference(item.bitrate, s.get_value("bitrate"));
+            diff += this.field_difference(item.width, s.get_value("width"));
+            diff += this.field_difference(item.height, s.get_value("height"));
+            
+            if (diff < min_distance) {
+                min_distance = diff;
+            }
+        }
+        
+        return min_distance;
     };
 
     /**
@@ -167,21 +144,29 @@ internal abstract class Rygel.DLNATranscoder : Rygel.Transcoder {
      * FIXME: Some audio changes are worse than others.
      * Downmixing 5.1 to 2 should be counted higher than, say, downsampling 48khz to 44.1khz
      *
-     * @param subprofile    Which 'subprofile' to use.
      * @param item          Input AudioItem stream to compare against.
      * @return      An integer distance assessment as to the difficulty
      *              of transcoding input audio stream to the selected subprofile
      */
-    private int get_audio_distance(int subprofile, AudioItem item) {
-        int our_rate = this.audio_rate.get(subprofile);
-        int our_width = this.audio_width.get(subprofile);
-        int our_channels = this.audio_channels.get(subprofile);
-        int our_bitrate = this.audio_bitrate.get(subprofile);
-
-        return (item.bitrate - our_bitrate).abs() +
-               (item.bits_per_sample - our_width).abs() +
-               (item.channels - our_channels).abs() +
-               (item.sample_freq - our_rate).abs();
+    private uint get_audio_distance(AudioItem item) {
+        var format = this.audioprof.get_format();
+        int num_structs = format.get_size();
+        int min_distance = uint.MAX;
+        for (int i = 0; i < num_structs; i++) {
+            var s = format.get_structure(i);
+            //we need fields: rate, width, channels, bitrate
+            int diff = 0;
+            diff += this.field_difference(item.rate, s.get_value("rate"));
+            diff += this.field_difference(item.channels, s.get_value("channels"));
+            diff += this.field_difference(item.width, s.get_value("width"));
+            diff += this.field_difference(item.bitrate, s.get_value("bitrate"));
+            
+            if (diff < min_distance) {
+                min_distance = diff;
+            }
+        }
+        
+        return min_distance;
     };
 
     /**
@@ -205,15 +190,17 @@ internal abstract class Rygel.DLNATranscoder : Rygel.Transcoder {
             return uint.MAX;
         }
 
-        int min_audiodist = uint.MAX;
-        int min_videodist = uint.MAX;
+        int dist = 0;
         
-        if (item is AudioItem) {
-            AudioItem 
-            for (int i = 0; i < this.audio_bitrate.size; i++) {
-                int our_audiodist = this.get_audio_distance(i, item.
-            }
+        if (item is AudioItem && this.audioprof != null) {
+            dist += this.get_audio_distance(item as AudioItem);
         }
+        
+        if (item is VisualItem && this.videoprof != null) {
+            dist += this.get_video_distance(item as VisualItem);
+        }
+        
+        return dist;
     };
 
     public override DIDLLiteResource? add_resource (DIDLLiteItem     didl_item,
