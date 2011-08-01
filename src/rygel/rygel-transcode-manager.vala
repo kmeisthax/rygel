@@ -47,38 +47,18 @@ internal abstract class Rygel.TranscodeManager : GLib.Object {
         var config = MetaConfig.get_default ();
 
         var transcoding = true;
-        var lpcm_transcoder = true;
-        var mp3_transcoder = true;
-        var mp2ts_transcoder = true;
-        var wmv_transcoder = true;
 
         try {
             transcoding = config.get_transcoding ();
-
-            if (transcoding) {
-                lpcm_transcoder = config.get_lpcm_transcoder ();
-                mp3_transcoder = config.get_mp3_transcoder ();
-                mp2ts_transcoder = config.get_mp2ts_transcoder ();
-                wmv_transcoder = config.get_wmv_transcoder ();
-            }
         } catch (Error err) {}
 
         if (transcoding) {
-            if (lpcm_transcoder) {
-                transcoders.add (new L16Transcoder ());
-            }
+            //currently only using non-relaxed, non-extended profiles
+            var disco = new DLNADiscoverer(false, false);
 
-            if (mp3_transcoder) {
-                transcoders.add (new MP3Transcoder ());
-            }
-
-            if (mp2ts_transcoder) {
-                transcoders.add (new MP2TSTranscoder(MP2TSProfile.SD));
-                transcoders.add (new MP2TSTranscoder(MP2TSProfile.HD));
-            }
-
-            if (wmv_transcoder) {
-                transcoders.add (new WMVTranscoder ());
+            var profs = disco.list_profiles();
+            foreach (DLNAProfile prof in profs) {
+                transcoders.add (new Rygel.DLNATranscoder(prof));
             }
         }
     }
