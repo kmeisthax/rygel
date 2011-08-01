@@ -37,10 +37,6 @@ internal class Rygel.CmdlineConfig : GLib.Object, Configuration {
 
     private static bool no_upnp;
     private static bool no_transcoding;
-    private static bool no_mp3_trans;
-    private static bool no_mp2ts_trans;
-    private static bool no_lpcm_trans;
-    private static bool no_wmv_trans;
 
     private static bool disallow_upload;
     private static bool disallow_deletion;
@@ -74,15 +70,6 @@ internal class Rygel.CmdlineConfig : GLib.Object, Configuration {
           "Port", "PORT" },
         { "disable-transcoding", 't', 0, OptionArg.NONE, ref no_transcoding,
           "Disable transcoding", null },
-        { "disable-mp3-transcoder", 'm', 0, OptionArg.NONE, ref no_mp3_trans,
-          "Disable MP3 transcoder", null },
-        { "disable-mp2ts-transcoder", 's', 0, OptionArg.NONE,
-          ref no_mp2ts_trans,
-          "Disable mpeg2 transport stream transcoder", null },
-        { "disable-lpcm-transcoder", 'l', 0, OptionArg.NONE, ref no_lpcm_trans,
-          "Disable Linear PCM transcoder", null },
-        { "disable-wmv-transcoder", 'w', 0, OptionArg.NONE, ref no_wmv_trans,
-          "Disable WMV transcoder", null },
         { "disallow-upload", 'U', 0, OptionArg.NONE,
           ref disallow_upload, "Disallow upload", null },
         { "disallow-deletion", 'D', 0, OptionArg.NONE,
@@ -172,39 +159,7 @@ internal class Rygel.CmdlineConfig : GLib.Object, Configuration {
             return false;
         }
     }
-
-    public bool get_mp3_transcoder () throws GLib.Error {
-        if (!no_mp3_trans) {
-            throw new ConfigurationError.NO_VALUE_SET (_("No value available"));
-        } else {
-            return false;
-        }
-    }
-
-    public bool get_mp2ts_transcoder () throws GLib.Error {
-        if (!no_mp2ts_trans) {
-            throw new ConfigurationError.NO_VALUE_SET (_("No value available"));
-        } else {
-            return false;
-        }
-    }
-
-    public bool get_lpcm_transcoder () throws GLib.Error {
-        if (!no_lpcm_trans) {
-            throw new ConfigurationError.NO_VALUE_SET (_("No value available"));
-        } else {
-            return false;
-        }
-    }
-
-    public bool get_wmv_transcoder () throws GLib.Error {
-        if (!no_wmv_trans) {
-            throw new ConfigurationError.NO_VALUE_SET (_("No value available"));
-        } else {
-            return false;
-        }
-    }
-
+    
     public bool get_allow_upload () throws GLib.Error {
         if (!disallow_upload) {
             throw new ConfigurationError.NO_VALUE_SET (_("No value available"));
