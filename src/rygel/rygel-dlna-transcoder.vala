@@ -93,18 +93,53 @@ internal class Rygel.DLNATranscoder : Rygel.Transcoder {
         }
     };
 
-    private uint field_difference(int me, unowned Value? theirs) {
+    /**
+     * Given an integer and a value, return the difference between that integer and the closest acceptable integer in that value.
+     *
+     * @param me                The integer we are testing against the field value
+     * @param theirs            The field value, nullable
+     * @param winning_value     The closest allowed integer within the field value constraints. Out parameter, nullable.
+     * @returns     Distance between the input integer and the closest allowed integer.
+     */
+    private uint field_difference_int(int me, unowned Gst.Value? theirs, out int? winning_value) {
         if (theirs == null) {
             return 0;
         } else if (theirs.holds(IntRange)) {
             if (me < theirs.get_int_range_min()) {
+                if (winning_value != null) {
+                    winning_value = theirs.get_int_range_min();
+                }
                 return (me - theirs.get_int_range_min()).abs();
             } else if (me > theirs.get_int_range_max()) {
+                if (winning_value != null) {
+                    winning_value = theirs.get_int_range_max();
+                }
                 return (me - theirs.get_int_range_max()).abs();
             } else {
+                if (winning_value != null) {
+                    winning_value = me;
+                }
                 return 0;
             }
+        } else if (theirs.holds(Gst.List)) {
+            uint min_distance = uint.MAX;
+            
+            for (int x = 0; x < theirs.list_get_size(); x++) {
+                int winning_altval = 0;
+                uint my_dist = this.field_difference(me, theirs.list_get_value(x), winning_altval);
+                if (my_dist < min_distance) {
+                    min_distance = my_dist;
+                    if (winning_value != null) {
+                        winning_value = winning_altval;
+                    }
+                }
+            }
+            
+            return min_distance;
         } else if (theirs.holds(int)) {
+            if (winning_value != null) {
+                winning_value = theirs.get_int();
+            }
             return (me - theirs.get_int()).abs();
         }
     };
@@ -114,56 +149,109 @@ internal class Rygel.DLNATranscoder : Rygel.Transcoder {
      * and an input video stream bitrate and picture size.
      *
      * @param item          Input VisualItem to transcode, either a video or picture
+     * @param didl_item     DIDLLiteResource to fill with information about the VisualItem that's been conformed to this transcoder's profile. Optional.
+     * @param outbitrate    Bitrate of the video stream. Out parameter, optional.
      * @return      An integer distance assessment as to the difficulty
      *              of transcoding input video stream to the selected subprofile
      */
-    private uint get_video_distance(VisualItem item) {
+    private uint get_video_distance(VisualItem item, DIDLLiteResource? didl_item, out int? outbitrate) {
         var format = this.videoprof.get_format();
         int num_structs = format.get_size();
         int min_distance = uint.MAX;
+        
+        int bitrate = 0;
+        int width = 0;
+        int height = 0;
+        
         for (int i = 0; i < num_structs; i++) {
             var s = format.get_structure(i);
             //we need fields: width, height, bitrate
+            int mybitrate = 0;
+            int mywidth = 0;
+            int myheight = 0;
+            
             int diff = 0;
-            diff += this.field_difference(item.bitrate, s.get_value("bitrate"));
-            diff += this.field_difference(item.width, s.get_value("width"));
-            diff += this.field_difference(item.height, s.get_value("height"));
+            diff += this.field_difference_int(item.bitrate, s.get_value("bitrate"), mybitrate);
+            diff += this.field_difference_int(item.width, s.get_value("width"), mywidth);
+            diff += this.field_difference_int(item.height, s.get_value("height"), myheight);
             
             if (diff < min_distance) {
                 min_distance = diff;
+                
+                bitrate = mybitrate;
+                width = mywidth;
+                height = myheight;
             }
+        }
+        
+        if (didl_item != null) {
+            didl_item.width = width;
+            didl_item.height = height;
+        }
+        
+        if (outbitrate != null) {
+            /* DIDL specifies bitrate as overall container bitrate, not per-stream bitrate */
+            outbitrate = bitrate;
         }
         
         return min_distance;
     };
 
     /**
-     * Calculate the distance between a particular subprofile we have
-     * and an input audio stream's parameters.
+     * Calculate the distance between a particular subprofile we have and an input audio stream's parameters.
      *
-     * FIXME: Some audio changes are worse than others.
-     * Downmixing 5.1 to 2 should be counted higher than, say, downsampling 48khz to 44.1khz
+     * FIXME: Come up with better weighting for differences
      *
      * @param item          Input AudioItem stream to compare against.
+     * @param didl_item     DIDLLiteResource to fill with information about the AudioItem that's been conformed to this transcoder's profile.
+     * @param outbitrate    Bitrate of the video stream. Out parameter, optional.
      * @return      An integer distance assessment as to the difficulty
      *              of transcoding input audio stream to the selected subprofile
      */
-    private uint get_audio_distance(AudioItem item) {
+    private uint get_audio_distance(AudioItem item, DIDLLiteResource? didl_item, out int? outbitrate) {
         var format = this.audioprof.get_format();
         int num_structs = format.get_size();
         int min_distance = uint.MAX;
+        
+        //we need fields: rate, width, channels, bitrate
+        int rate = 0;
+        int width = 0;
+        int channels = 0;
+        int bitrate = 0;
+        
         for (int i = 0; i < num_structs; i++) {
             var s = format.get_structure(i);
-            //we need fields: rate, width, channels, bitrate
+            
+            int myrate = 0;
+            int mywidth = 0;
+            int mychannels = 0;
+            int mybitrate = 0;
+            
             int diff = 0;
-            diff += this.field_difference(item.rate, s.get_value("rate"));
-            diff += this.field_difference(item.channels, s.get_value("channels"));
-            diff += this.field_difference(item.width, s.get_value("width"));
-            diff += this.field_difference(item.bitrate, s.get_value("bitrate"));
+            diff += this.field_difference_int(item.rate, s.get_value("rate"), myrate);
+            diff += this.field_difference_int(item.channels, s.get_value("channels"), mywidth);
+            diff += this.field_difference_int(item.width, s.get_value("width"), mychannels);
+            diff += this.field_difference_int(item.bitrate, s.get_value("bitrate"), mybitrate);
             
             if (diff < min_distance) {
                 min_distance = diff;
+                
+                rate = myrate;
+                width = mywidth;
+                channels = mychannels;
+                bitrate = mybitrate;
             }
+        }
+        
+        if (didl_item != null) {
+            didl_item.sample-freq = rate;
+            didl_item.bits-per-sample = width;
+            didl_item.audio-channels = channels;
+        }
+        
+        if (outbitrate != null) {
+            /* DIDL specifies bitrate as overall container bitrate, not per-stream bitrate */
+            outbitrate = bitrate;
         }
         
         return min_distance;
@@ -193,11 +281,11 @@ internal class Rygel.DLNATranscoder : Rygel.Transcoder {
         int dist = 0;
         
         if (item is AudioItem && this.audioprof != null) {
-            dist += this.get_audio_distance(item as AudioItem);
+            dist += this.get_audio_distance(item as AudioItem, null, null);
         }
         
         if (item is VisualItem && this.videoprof != null) {
-            dist += this.get_video_distance(item as VisualItem);
+            dist += this.get_video_distance(item as VisualItem, null, null);
         }
         
         return dist;
@@ -214,10 +302,19 @@ internal class Rygel.DLNATranscoder : Rygel.Transcoder {
         //Audio items need channel count, sample frequency, and bitrate.
         //Something with both audio and video gets a bitrate that is the sum of audio + video bitrate,
         //this should be relatively close to the container bitrate (unless we have like 40 sub tracks)
-        switch (this.upnp_class) {
-            case AudioItem.UPNP_CLASS:
-                resource.sampleFrequency = this.audio_rate;
-                break;
+        int audio_bitrate = 0;
+        int video_bitrate = 0;
+        
+        if (item is AudioItem) {
+            this.get_audio_distance(item as AudioItem, resource, audio_bitrate);
+        }
+        
+        if (item is VisualItem) {
+            this.get_video_distance(item as VisualItem, resource, video_bitrate);
+        }
+        
+        if (audio_bitrate + video_bitrate > 0) {
+            resource.bitrate = audio_bitrate + video_bitrate;
         }
     };
 }
