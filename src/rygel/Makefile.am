@@ -92,10 +92,7 @@ VAPI_SOURCE_FILES = \
 	rygel-logical-expression.vala \
 	rygel-search-criteria-parser.vala \
 	rygel-transcoder.vala \
-	rygel-mp2ts-transcoder.vala \
-	rygel-mp3-transcoder.vala \
-	rygel-l16-transcoder.vala \
-	rygel-wmv-transcoder.vala \
+	rygel-dlna-transcoder.vala \
 	rygel-gst-utils.vala \
 	rygel-media-receiver-registrar.vala \
 	rygel-log-handler.vala \
