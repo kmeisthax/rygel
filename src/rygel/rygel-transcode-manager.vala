@@ -54,9 +54,10 @@ internal abstract class Rygel.TranscodeManager : GLib.Object {
 
         if (transcoding) {
             //currently only using non-relaxed, non-extended profiles
-            var disco = new DLNADiscoverer(false, false);
+            //and 100ms timeout
+            var disco = new DLNADiscoverer(100 * Gst.MSECOND, false, false);
 
-            var profs = disco.list_profiles();
+            unowned GLib.List<DLNAProfile> profs = disco.list_profiles();
             foreach (DLNAProfile prof in profs) {
                 transcoders.add (new Rygel.DLNATranscoder(prof));
             }
