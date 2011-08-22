@@ -32,6 +32,8 @@ using Gst;
  */
 internal abstract class Rygel.TranscodeManager : GLib.Object {
     private ArrayList<Transcoder> transcoders;
+    private ArrayList<DLNAProfile> dprofiles;
+    private DLNADiscoverer disco;
 
     private static bool protocol_equal_func (void *a, void *b) {
         var protocol_a = a as ProtocolInfo;
@@ -43,6 +45,7 @@ internal abstract class Rygel.TranscodeManager : GLib.Object {
 
     public TranscodeManager () {
         transcoders = new ArrayList<Transcoder> ();
+        dprofiles = new ArrayList<DLNAProfile> ();
 
         var config = MetaConfig.get_default ();
 
@@ -54,13 +57,16 @@ internal abstract class Rygel.TranscodeManager : GLib.Object {
 
         if (transcoding) {
             //currently only using non-relaxed, non-extended profiles
-            //and 100ms timeout
-            var disco = new DLNADiscoverer(100 * Gst.MSECOND, false, false);
+            //and 100s timeout
+            disco = new DLNADiscoverer(100 * Gst.SECOND, false, false);
 
             unowned GLib.List<DLNAProfile> profs = disco.list_profiles();
             foreach (DLNAProfile prof in profs) {
+                dprofiles.add(prof);
                 transcoders.add (new Rygel.DLNATranscoder(prof));
             }
+            
+            GLib.message("Found %u profiles and created %u transcoders", dprofiles.size, transcoders.size);
         }
     }
 
